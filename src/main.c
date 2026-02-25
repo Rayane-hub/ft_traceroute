@@ -1,6 +1,10 @@
 
 #include <stdio.h>  //printf()
 #include <string.h> //strcmp()
+#include <sys/types.h>
+#include <sys/socket.h>
+#include <netdb.h>
+#include <arpa/inet.h> //
 
 typedef struct s_data{
     char *host;
@@ -48,6 +52,24 @@ int main(int ac, char **av)
         return 2;
     printf("|%s|\n", data.host);
 
+    struct addrinfo hints;
+    struct addrinfo *res;
+    memset(&hints, 0, sizeof(hints));
+    hints.ai_family = AF_INET;
+    //hints.ai_socktype = SOCK_DGRAM;
+    //hints.ai_protocole = IPPROTO_UDP;
+
+    //int getaddrinfo(const char *node, const char *service, const struct addrinfo *hints, struct addrinfo **res);
+    int ret = getaddrinfo(data.host, NULL, &hints, &res);
     
+    if (ret != 0)
+        return(fprintf(stderr, "getaddrinfo: %s\n", gai_strerror(ret)));
+    
+    struct sockaddr_in dst = *(struct sockaddr_in *)res->ai_addr;
+    freeaddrinfo(res);
+    
+    char ip[INET_ADDRSTRLEN];
+    inet_ntop(AF_INET, &dst.sin_addr, ip, sizeof(ip));
+    printf("ip = |%s|\n", ip);
     return 0;
 }
