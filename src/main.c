@@ -52,12 +52,13 @@ int main(int ac, char **av)
         return 2;
     printf("|%s|\n", data.host);
 
+/*******************RESOLVE IPV4******************************** */
     struct addrinfo hints;
     struct addrinfo *res;
     memset(&hints, 0, sizeof(hints));
     hints.ai_family = AF_INET;
-    //hints.ai_socktype = SOCK_DGRAM;
-    //hints.ai_protocole = IPPROTO_UDP;
+    hints.ai_socktype = SOCK_DGRAM;
+    hints.ai_protocol = IPPROTO_UDP;
 
     //int getaddrinfo(const char *node, const char *service, const struct addrinfo *hints, struct addrinfo **res);
     int ret = getaddrinfo(data.host, NULL, &hints, &res);
@@ -66,10 +67,12 @@ int main(int ac, char **av)
         return(fprintf(stderr, "getaddrinfo: %s\n", gai_strerror(ret)));
     
     struct sockaddr_in dst = *(struct sockaddr_in *)res->ai_addr;
+    dst.sin_port = htons(33434);
     freeaddrinfo(res);
-    
+
     char ip[INET_ADDRSTRLEN];
     inet_ntop(AF_INET, &dst.sin_addr, ip, sizeof(ip));
     printf("ip = |%s|\n", ip);
+    /*************************************************************************************** */
     return 0;
 }
