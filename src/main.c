@@ -1,14 +1,16 @@
 
-#include <stdio.h>  //printf()
-#include <string.h> //strcmp()
-#include <sys/types.h>
-#include <sys/socket.h>
-#include <netdb.h>
-#include <arpa/inet.h> //
+#include <stdio.h>      //printf()
+#include <string.h>     //strcmp()
+#include <netdb.h>      //getaddrinfo()
+#include <arpa/inet.h>  //inet_ntop()
+#include <errno.h>      //errno
+#include <unistd.h>     //close 
 
 typedef struct s_data{
-    char *host;
-    char *host_two;
+    char    *host;
+    char    *host_two;
+    int     send_sock;
+    int     recv_sock;
 }t_data;
 
 void print_help()
@@ -45,12 +47,13 @@ int parse_arg(int ac, char **av, t_data *data)
 
 int main(int ac, char **av)
 {
+    /*************INIT & PARSING********************************* */
     t_data data;
     data.host = NULL;
     data.host_two = NULL;
     if (parse_arg(ac, av, &data))
         return 2;
-    printf("|%s|\n", data.host);
+    printf("|%s|\t", data.host);
 
 /*******************RESOLVE IPV4******************************** */
     struct addrinfo hints;
@@ -60,12 +63,10 @@ int main(int ac, char **av)
     hints.ai_socktype = SOCK_DGRAM;
     hints.ai_protocol = IPPROTO_UDP;
 
-    //int getaddrinfo(const char *node, const char *service, const struct addrinfo *hints, struct addrinfo **res);
     int ret = getaddrinfo(data.host, NULL, &hints, &res);
-    
     if (ret != 0)
         return(fprintf(stderr, "getaddrinfo: %s\n", gai_strerror(ret)));
-    
+
     struct sockaddr_in dst = *(struct sockaddr_in *)res->ai_addr;
     dst.sin_port = htons(33434);
     freeaddrinfo(res);
@@ -73,6 +74,20 @@ int main(int ac, char **av)
     char ip[INET_ADDRSTRLEN];
     inet_ntop(AF_INET, &dst.sin_addr, ip, sizeof(ip));
     printf("ip = |%s|\n", ip);
-    /*************************************************************************************** */
+
+    /***************SOCKET***************************************************** */
+
+    data.send_sock = socket(AF_INET, SOCK_DGRAM, IPPROTO_UDP);
+    if (data.send_sock < 0)
+        return(fprintf(stderr, "socket UDP: %s\n", strerror(errno)), 1);
+
+    data.recv_sock = socket(AF_INET, SOCK_RAW, IPPROTO_ICMP);
+    if (data.recv_sock < 0)
+        return(fprintf(stderr, "socket ICMP: %s\n", strerror(errno)), close(data.send_sock), 1);
+    
+    /******************************************************************************************* */
+
+    
+
     return 0;
 }
