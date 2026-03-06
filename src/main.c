@@ -11,6 +11,9 @@ typedef struct s_data{
     char    *host_two;
     int     send_sock;
     int     recv_sock;
+    int     ttl;
+    int     hops_max;
+    int     seq;
 }t_data;
 
 void print_help()
@@ -47,15 +50,13 @@ int parse_arg(int ac, char **av, t_data *data)
 
 int main(int ac, char **av)
 {
-    /*************INIT & PARSING********************************* */
+/*************INIT & PARSING************************************** */
     t_data data;
     data.host = NULL;
     data.host_two = NULL;
     if (parse_arg(ac, av, &data))
         return 2;
-    printf("|%s|\t", data.host);
-
-/*******************RESOLVE IPV4******************************** */
+/**************RESOLVE IPV4********************************************* */
     struct addrinfo hints;
     struct addrinfo *res;
     memset(&hints, 0, sizeof(hints));
@@ -67,15 +68,13 @@ int main(int ac, char **av)
     if (ret != 0)
         return(fprintf(stderr, "getaddrinfo: %s\n", gai_strerror(ret)));
 
-    struct sockaddr_in dst = *(struct sockaddr_in *)res->ai_addr;
-    dst.sin_port = htons(33434);
+    struct sockaddr_in dest = *(struct sockaddr_in *)res->ai_addr;
+    dest.sin_port = htons(33434);
     freeaddrinfo(res);
 
-    char ip[INET_ADDRSTRLEN];
-    inet_ntop(AF_INET, &dst.sin_addr, ip, sizeof(ip));
-    printf("ip = |%s|\n", ip);
-
-    /***************SOCKET***************************************************** */
+    char ip_send[INET_ADDRSTRLEN];
+    inet_ntop(AF_INET, &dest.sin_addr, ip_send, sizeof(ip_send));
+/***************SOCKET***************************************************** */
 
     data.send_sock = socket(AF_INET, SOCK_DGRAM, IPPROTO_UDP);
     if (data.send_sock < 0)
@@ -84,10 +83,36 @@ int main(int ac, char **av)
     data.recv_sock = socket(AF_INET, SOCK_RAW, IPPROTO_ICMP);
     if (data.recv_sock < 0)
         return(fprintf(stderr, "socket ICMP: %s\n", strerror(errno)), close(data.send_sock), 1);
-    
-    /******************************************************************************************* */
+/******************************************************************************************* */
+    data.seq = 0;
+    data.ttl = 1;
+    data.hops_max = 30;
 
-    
+    /*while (data.ttl <= data.hops_max)
+    {
+        if (setsockopt(data.send_sock, IPPROTO_IP, IP_TTL, &data.ttl, sizeof(data.ttl)) < 0)
+            return(perror("setsockopt IP_TTL"), 1);
+        
+    }*/
 
+    if (setsockopt(data.send_sock, IPPROTO_IP, IP_TTL, &data.ttl, sizeof(data.ttl)) < 0)
+        return(perror("setsockopt IP_TTL"), 1);
+    
+    char payload[32] = {0};
+    int bytes_send = sendto(data.send_sock, payload, 32, 0, (struct sockaddr *)&dest, sizeof(dest));
+    if (bytes_send < 0)
+        perror("sendo ");
+    printf("ft_traceroute to %s (%s), %d hops max, %d byte packets\n", data.host, ip_send, data.hops_max, bytes_send);
+    ssize_t recvfrom(int sockfd, void *buf, size_t len, int flags, struct sockaddr *src_addr, socklen_t *addrlen);
+    unsigned char buf[1500];
+    struct sockaddr_in from;
+    socklen_t len = sizeof(from);
+    int bytes_recv = recvfrom(data.recv_sock, buf, sizeof(buf), 0, (struct sockaddr *)&from, &len);
+    if (bytes_recv < 0)
+        perror("recv");
+    printf("bytes recv = %d\n", bytes_recv);
+    char ip_recv[INET_ADDRSTRLEN];
+    inet_ntop(from.sin_family, &from.sin_addr, ip_recv, sizeof(ip_recv));
+    printf("|%s|\n", ip_recv);
     return 0;
 }
