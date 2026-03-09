@@ -107,41 +107,71 @@ int main(int ac, char **av)
     int packet_size = 32;
     /* Print header once before the send/recv loop */
     printf("ft_traceroute to %s (%s), %d hops max, %d byte packets\n", data.host, ip_send, data.hops_max, packet_size);
-
+    int probe;
     while (data.ttl <= data.hops_max)
-    {
-        struct timeval tv1, tv2;
-        gettimeofday(&tv1, NULL);
+    {//*3
+        probe = 0;
+        do{
+            if (!probe)
+                printf("%d  ", data.seq);
+            struct timeval tv1, tv2, tv_nblock;
+            gettimeofday(&tv1, NULL);
 
-        if (setsockopt(data.send_sock, IPPROTO_IP, IP_TTL, &data.ttl, sizeof(data.ttl)) < 0)
-            return (perror("setsockopt IP_TTL"), 1);
+            if (setsockopt(data.send_sock, IPPROTO_IP, IP_TTL, &data.ttl, sizeof(data.ttl)) < 0)
+                return (perror("setsockopt IP_TTL"), 1);
+            
+            tv_nblock.tv_sec = 3;
+            tv_nblock.tv_usec = 0;
+            if (setsockopt(data.recv_sock, SOL_SOCKET, SO_RCVTIMEO, &tv_nblock, sizeof(tv_nblock)) < 0)
+                return (perror("setsockopt NBLOCK"), 1);
 
-        char payload[packet_size];
-        memset(payload, 0, sizeof(payload));
-        int bytes_send = sendto(data.send_sock, payload, packet_size, 0, (struct sockaddr *)&dest, sizeof(dest));
-        if (bytes_send < 0)
-            perror("sendto");
-        // printf("bytes sent = %d\n", bytes_send);
+            char payload[packet_size];
+            memset(payload, 0, sizeof(payload));
+            int bytes_send = sendto(data.send_sock, payload, packet_size, 0, (struct sockaddr *)&dest, sizeof(dest));
+            if (bytes_send < 0)
+                perror("sendto");
+            // printf("bytes sent = %d\n", bytes_send);
 
-        unsigned char buf[1500];
-        struct sockaddr_in from;
-        socklen_t len = sizeof(from);
-        int bytes_recv = recvfrom(data.recv_sock, buf, sizeof(buf), 0, (struct sockaddr *)&from, &len);
-        if (bytes_recv < 0)
-            perror("recv");
-        // printf("bytes recv = %d\n", bytes_recv);
-        gettimeofday(&tv2, NULL);
+            unsigned char buf[1500];
+            struct sockaddr_in from;
+            socklen_t len = sizeof(from);
+            int bytes_recv = recvfrom(data.recv_sock, buf, sizeof(buf), 0, (struct sockaddr *)&from, &len);
+            gettimeofday(&tv2, NULL);
+            if (bytes_recv < 0){
+                printf("* ");
+                probe++;
+                if(probe == 3)
+                {   
+                    data.ttl++;
+                    data.seq++;
+                    printf("\n");
+                }
+                continue;
+            }
+            char ip_recv[INET_ADDRSTRLEN];
+            inet_ntop(from.sin_family, &from.sin_addr, ip_recv, sizeof(ip_recv));
+            if (!probe)
+                printf("%s   ", ip_recv);
 
-        char ip_recv[INET_ADDRSTRLEN];
-        inet_ntop(from.sin_family, &from.sin_addr, ip_recv, sizeof(ip_recv));
-        printf("|%s|   ", ip_recv);
-
-        char host[NI_MAXHOST];
-        getnameinfo((struct sockaddr *)&from, sizeof(from), host, sizeof(host), NULL, 0, NI_NAMEREQD);
-        printf("|%s|   ", host);
-        float rtt = (tv2.tv_sec - tv1.tv_sec) * 1000.0 + (tv2.tv_usec - tv1.tv_usec) / 1000.0;
-        printf("%.3f ms\n", rtt);
-        data.ttl++;
+            char host[NI_MAXHOST];
+            if (!probe)
+            {
+                if (getnameinfo((struct sockaddr *)&from, sizeof(from), host, sizeof(host), NULL, 0, NI_NAMEREQD) != 0)
+                    printf("(%s) ", host);
+                else
+                    printf("(%s) ", ip_recv);
+            }
+            float rtt = (tv2.tv_sec - tv1.tv_sec) * 1000.0 + (tv2.tv_usec - tv1.tv_usec) / 1000.0;
+            printf("%.3f ms ", rtt);
+            probe++;
+           // printf("PROBE = %d\n", probe);
+            if(probe == 3)
+            {   
+                data.ttl++;
+                data.seq++;
+                printf("\n");
+            }
+        } while (probe < 3);
     }
 
     return 0;
