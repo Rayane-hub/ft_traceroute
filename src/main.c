@@ -18,7 +18,6 @@
 typedef struct s_data
 {
     char *host;
-    char *host_two;
     int send_sock;
     int recv_sock;
     int ttl;
@@ -52,10 +51,8 @@ int parse_arg(int ac, char **av, t_data *data)
         }
         if (av[i] && data->host == NULL)
             data->host = av[i];
-        else if (av[i] && data->host_two == NULL)
-            data->host_two = av[i];
-        else if (av[i] && data->host_two != NULL)
-            return (printf("Extra arg `%s' (argc %d)\n", av[i], i), 1);
+        else if (data->host && av[i])
+            return (printf("Cannot handle packetlen cmdline arg `%s' on position %d (argc %d)\n", av[i], i, i), 1);
     }
 
     return 0;
@@ -66,7 +63,6 @@ int main(int ac, char **av)
 /*************INIT & PARSING********************************************** */
     t_data data;
     data.host = NULL;
-    data.host_two = NULL;
     if (parse_arg(ac, av, &data))
         return 2;
 /**************RESOLVE IPV4*********************************************** */
@@ -156,7 +152,7 @@ int main(int ac, char **av)
             if (probe == 1)
                 strcpy(data.ip_last_recv, ip_recv);
             char host[NI_MAXHOST];
-            if (!probe || strcmp(ip_recv, data.ip_last_recv))
+            if (!probe)
             {
                 if (getnameinfo((struct sockaddr *)&from, sizeof(from), host, sizeof(host), NULL, 0, 0))
                     snprintf(host, sizeof(host), "%s", ip_recv);
