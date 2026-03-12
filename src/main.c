@@ -11,21 +11,9 @@
 #include <string.h> // strcmp()
 #include <stdio.h> // printf()
 #include <sys/time.h> // timeval
-/*
-int main()
-{
-    struct timeval tv1;
-    gettimeofday(&tv1, NULL);
-    printf("sec = %ld\n", tv1.tv_sec);
-    sleep(2);
-    struct timeval tv2;
-    gettimeofday(&tv2, NULL);
-    printf("sec = %ld\n", tv2.tv_sec);
-    printf("sec diff = %ld\n", tv2.tv_sec - tv1.tv_sec);
-    //tv.tv_usec;
+#include <string.h>
+#include <stdlib.h>
 
-}
-*/
 
 typedef struct s_data
 {
@@ -36,6 +24,7 @@ typedef struct s_data
     int ttl;
     int hops_max;
     int seq;
+    char ip_last_recv[INET_ADDRSTRLEN];
 } t_data;
 
 void print_help()
@@ -54,8 +43,10 @@ int parse_arg(int ac, char **av, t_data *data)
     {
         if (av[i][0] == '-')
         {
-            if (strcmp(av[i], "--help") == 0)
-                return (print_help(), 0);
+            if (strcmp(av[i], "--help") == 0){
+                print_help();
+                exit(0);
+            }
             else
                 return (printf("Bad option `%s' (argc %d)\n", av[i], i), 1);
         }
@@ -72,13 +63,13 @@ int parse_arg(int ac, char **av, t_data *data)
 
 int main(int ac, char **av)
 {
-/*************INIT & PARSING************************************** */
+/*************INIT & PARSING********************************************** */
     t_data data;
     data.host = NULL;
     data.host_two = NULL;
     if (parse_arg(ac, av, &data))
         return 2;
-/**************RESOLVE IPV4********************************************* */
+/**************RESOLVE IPV4*********************************************** */
     struct addrinfo hints;
     struct addrinfo *res;
     memset(&hints, 0, sizeof(hints));
@@ -96,7 +87,7 @@ int main(int ac, char **av)
 
     char ip_send[INET_ADDRSTRLEN];
     inet_ntop(AF_INET, &dest.sin_addr, ip_send, sizeof(ip_send));
-/***************SOCKET***************************************************** */
+/***************SOCKET*********************************************************************** */
 
     data.send_sock = socket(AF_INET, SOCK_DGRAM, IPPROTO_UDP);
     if (data.send_sock < 0)
@@ -105,7 +96,8 @@ int main(int ac, char **av)
     data.recv_sock = socket(AF_INET, SOCK_RAW, IPPROTO_ICMP);
     if (data.recv_sock < 0)
         return (fprintf(stderr, "socket ICMP: %s\n", strerror(errno)), close(data.send_sock), 1);
-/******************************************************************************************* */
+
+/************************************************************************************************** */
     data.seq = 1;
     data.ttl = 0;
     data.hops_max = 30;
@@ -152,29 +144,30 @@ int main(int ac, char **av)
             if (bytes_recv < 0)
             {
                 printf("* ");
-                probe++;
-                if(probe == 3)
+                if(++probe == 3)
                 {   
                     data.seq++;
                     printf("\n");
                 }
                 continue;
             }
-           
-            inet_ntop(from.sin_family, &from.sin_addr, ip_recv, sizeof(ip_recv));
 
+            inet_ntop(from.sin_family, &from.sin_addr, ip_recv, sizeof(ip_recv));
+            if (probe == 1)
+                strcpy(data.ip_last_recv, ip_recv);
             char host[NI_MAXHOST];
-            if (!probe)
+            if (!probe || strcmp(ip_recv, data.ip_last_recv))
             {
                 if (getnameinfo((struct sockaddr *)&from, sizeof(from), host, sizeof(host), NULL, 0, 0))
                     snprintf(host, sizeof(host), "%s", ip_recv);
                 printf("%s (%s) ", host, ip_recv);
             }
+
             float rtt = (tv2.tv_sec - tv1.tv_sec) * 1000.0 + (tv2.tv_usec - tv1.tv_usec) / 1000.0;
             printf("%.3f ms ", rtt);
-            probe++;
-            if (probe == 3)
-            {   
+
+            if (++probe == 3)
+            {
                 data.seq++;
                 printf("\n");
             }
