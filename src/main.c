@@ -19,168 +19,146 @@ typedef struct s_data {
     int                 recv_sock;
     int                 ttl;
     int                 hops_max;
-    int                 seq;
+    uint16_t            start_port;
     struct sockaddr_in  dest;
     char                ip_str[INET_ADDRSTRLEN];
 } t_data;
 
-/* --- AIDE & PARSING --- */
-
+/* --- AIDE ET PARSING --- */
 void print_help() {
     printf("Usage: ft_traceroute [--help] <destination>\n");
-    printf("Trace route to an IPv4 host (address or hostname).\n\n");
-    printf("Options:\n");
-    printf("  --help    Display this help and exit\n");
 }
 
 int parse_arg(int ac, char **av, t_data *data) {
-    if (ac <= 1) {
-        fprintf(stderr, "missing destination\n");
-        return (1);
-    }
+    if (ac <= 1) return (fprintf(stderr, "Specify \"host\" missing\n"), 1);
     for (int i = 1; i < ac; i++) {
-        if (av[i][0] == '-') {
-            if (strcmp(av[i], "--help") == 0) {
-                print_help();
-                exit(0);
-            } else {
-                fprintf(stderr, "Bad option `%s' (argc %d)\n", av[i], i);
-                return (1);
-            }
-        }
-        if (data->host == NULL) {
-            data->host = av[i];
-        } else {
-            fprintf(stderr, "Cannot handle extra arg `%s' at position %d\n", av[i], i);
-            return (1);
-        }
+        if (strcmp(av[i], "--help") == 0) { print_help(); exit(0); }
+        if (av[i][0] == '-') return (fprintf(stderr, "Bad option `%s'\n", av[i]), 1);
+        if (!data->host) data->host = av[i];
     }
-    if (!data->host) {
-        fprintf(stderr, "missing destination\n");
-        return (1);
-    }
-    return (0);
+    return (data->host ? 0 : 1);
 }
 
-/* --- RÉSOLUTION RÉSEAU --- */
-
-int resolve_dest(t_data *data) {
-    struct addrinfo hints, *res;
-    memset(&hints, 0, sizeof(hints));
+/* --- RÉSOLUTION ET SOCKETS --- */
+int init_env(t_data *data) {
+    struct addrinfo hints = {0}, *res;
     hints.ai_family = AF_INET;
     hints.ai_socktype = SOCK_DGRAM;
 
-    if (getaddrinfo(data->host, NULL, &hints, &res) != 0) {
-        fprintf(stderr, "ft_traceroute: %s: Name or service not known\n", data->host);
-        return (1);
-    }
+    if (getaddrinfo(data->host, NULL, &hints, &res) != 0)
+        return (fprintf(stderr, "ft_traceroute: %s: Name or service not known\n", data->host), 1);
+    
     data->dest = *(struct sockaddr_in *)res->ai_addr;
     inet_ntop(AF_INET, &data->dest.sin_addr, data->ip_str, sizeof(data->ip_str));
     freeaddrinfo(res);
-    return (0);
-}
 
-int init_sockets(t_data *data) {
-    struct timeval tv = {1, 0};
     data->send_sock = socket(AF_INET, SOCK_DGRAM, IPPROTO_UDP);
     data->recv_sock = socket(AF_INET, SOCK_RAW, IPPROTO_ICMP);
+    struct timeval tv = {1, 0};
+    setsockopt(data->recv_sock, SOL_SOCKET, SO_RCVTIMEO, &tv, sizeof(tv));
     
-    if (data->send_sock < 0 || data->recv_sock < 0) {
-        perror("socket");
-        return (1);
-    }
-    if (setsockopt(data->recv_sock, SOL_SOCKET, SO_RCVTIMEO, &tv, sizeof(tv)) < 0) {
-        perror("setsockopt");
-        return (1);
-    }
-    return (0);
+    return (data->send_sock < 0 || data->recv_sock < 0);
 }
 
-/* --- ANALYSE ET AFFICHAGE --- */
-
-int check_response(unsigned char *buf) {
+/* --- P0 : FILTRAGE DES PAQUETS (PACKET MATCHING) --- 
+** On vérifie que le paquet ICMP contient bien NOTRE paquet UDP original.
+*/
+int is_my_packet(unsigned char *buf, ssize_t len, uint16_t expected_port) {
     struct iphdr *ip = (struct iphdr *)buf;
-    struct icmphdr *icmp = (struct icmphdr *)(buf + (ip->ihl * 4));
 
-    // ICMP Port Unreachable (Type 3, Code 3) signifie que la cible est atteinte
-    if (icmp->type == 3 && icmp->code == 3)
-        return (1);
-    // ICMP Echo Reply (Type 0) au cas où la cible répond directement
-    if (icmp->type == ICMP_ECHOREPLY)
-        return (1);
-    return (0);
-}
+    if (len < (ssize_t)sizeof(struct iphdr)) return (0);
+    int ip_hdr_len = ip->ihl * 4;
+    if (len < ip_hdr_len + (ssize_t)sizeof(struct icmphdr)) return (0);
 
-void print_hop_info(struct sockaddr_in *from, char *last_ip, int *got_reply) {
-    char ip_res[INET_ADDRSTRLEN];
-    char host[NI_MAXHOST];
+    struct icmphdr *icmp = (struct icmphdr *)(buf + ip_hdr_len);
 
-    inet_ntop(AF_INET, &from->sin_addr, ip_res, sizeof(ip_res));
-    if (!(*got_reply) || strcmp(last_ip, ip_res) != 0) {
-        if (getnameinfo((struct sockaddr *)from, sizeof(*from), host, sizeof(host), NULL, 0, 0) == 0)
-            printf(" %s (%s)", host, ip_res);
-        else
-            printf(" %s (%s)", ip_res, ip_res);
-        strncpy(last_ip, ip_res, INET_ADDRSTRLEN);
-        *got_reply = 1;
+    // Si c'est un Time Exceeded ou Destination Unreachable
+    if (icmp->type == ICMP_TIME_EXCEEDED || icmp->type == ICMP_DEST_UNREACH) {
+        // Le "payload" de l'ICMP contient l'en-tête IP + 8 octets du paquet original
+        if (len < ip_hdr_len + 8 + (ssize_t)sizeof(struct iphdr) + 8) return (0);
+
+        struct iphdr *inner_ip = (struct iphdr *)(buf + ip_hdr_len + 8);
+        int inner_ip_len = inner_ip->ihl * 4;
+
+        if (len < ip_hdr_len + 8 + inner_ip_len + 8) return (0);
+
+        struct udphdr *inner_udp = (struct udphdr *)((unsigned char *)inner_ip + inner_ip_len);
+        
+        // On vérifie si le port de destination correspond à celui envoyé
+        if (ntohs(inner_udp->dest) == expected_port)
+            return (icmp->type == ICMP_DEST_UNREACH ? 2 : 1);
     }
+    return (0);
 }
 
 /* --- BOUCLE PRINCIPALE --- */
-
 void traceroute_loop(t_data *data) {
-    int reached = 0;
-    printf("ft_traceroute to %s (%s), %d hops max, 32 byte packets\n", data->host, data->ip_str, data->hops_max);
+    printf("ft_traceroute to %s (%s), %d hops max, 60 byte packets\n", data->host, data->ip_str, data->hops_max);
 
-    while (++data->ttl <= data->hops_max && !reached) {
+    for (data->ttl = 1; data->ttl <= data->hops_max; data->ttl++) {
         printf("%2d ", data->ttl);
-        if (setsockopt(data->send_sock, IPPROTO_IP, IP_TTL, &data->ttl, sizeof(data->ttl)) < 0)
-            break;
+        setsockopt(data->send_sock, IPPROTO_IP, IP_TTL, &data->ttl, sizeof(data->ttl));
 
         char last_ip[INET_ADDRSTRLEN] = "";
-        int got_reply_for_hop = 0;
+        int reached = 0;
 
         for (int probe = 0; probe < 3; probe++) {
             struct timeval t1, t2;
-            gettimeofday(&t1, NULL);
+            uint16_t curr_port = data->start_port + (data->ttl * 3) + probe;
+            data->dest.sin_port = htons(curr_port);
 
-            data->dest.sin_port = htons(33434 + data->seq++);
-            sendto(data->send_sock, "42", 2, 0, (struct sockaddr *)&data->dest, sizeof(data->dest));
+            // Payload de 32 octets pour arriver à 60 octets au total (IP+UDP+Data)
+            char payload[32] = {0}; 
+            gettimeofday(&t1, NULL);
+            sendto(data->send_sock, payload, sizeof(payload), 0, (struct sockaddr *)&data->dest, sizeof(data->dest));
 
             unsigned char buf[1500];
             struct sockaddr_in from;
             socklen_t len = sizeof(from);
-            int res = recvfrom(data->recv_sock, buf, sizeof(buf), 0, (struct sockaddr *)&from, &len);
-            gettimeofday(&t2, NULL);
+            
+            while (1) { // Boucle de lecture pour filtrer les paquets parasites
+                struct timeval now;
+                gettimeofday(&now, NULL);
+                long elapsed_us = (now.tv_sec - t1.tv_sec) * 1000000 + (now.tv_usec - t1.tv_usec);
+                long timeout_us = 1000000 - elapsed_us;
 
-            if (res < 0) {
-                printf("  *");
-            } else {
-                print_hop_info(&from, last_ip, &got_reply_for_hop);
-                double rtt = (t2.tv_sec - t1.tv_sec) * 1000.0 + (t2.tv_usec - t1.tv_usec) / 1000.0;
-                printf("  %.3f ms", rtt);
-                if (check_response(buf)) reached = 1;
+                if (timeout_us <= 0) { printf("  *"); break; }
+
+                struct timeval tv = { timeout_us / 1000000, timeout_us % 1000000 };
+                setsockopt(data->recv_sock, SOL_SOCKET, SO_RCVTIMEO, &tv, sizeof(tv));
+
+                ssize_t res = recvfrom(data->recv_sock, buf, sizeof(buf), 0, (struct sockaddr *)&from, &len);
+                if (res < 0) { printf("  *"); break; }
+
+                int status = is_my_packet(buf, res, curr_port);
+                if (status > 0) {
+                    gettimeofday(&t2, NULL);
+                    char curr_ip[INET_ADDRSTRLEN];
+                    inet_ntop(AF_INET, &from.sin_addr, curr_ip, sizeof(curr_ip));
+
+                    if (strcmp(last_ip, curr_ip) != 0) {
+                        printf(" %s", curr_ip); // P0 : Pas de getnameinfo ici !
+                        strcpy(last_ip, curr_ip);
+                    }
+                    printf("  %.3f ms", (t2.tv_sec - t1.tv_sec) * 1000.0 + (t2.tv_usec - t1.tv_usec) / 1000.0);
+                    if (status == 2) reached = 1;
+                    break;
+                }
             }
-            fflush(stdout);
         }
         printf("\n");
+        if (reached) break;
     }
 }
 
 int main(int ac, char **av) {
-    t_data data;
-    memset(&data, 0, sizeof(t_data));
+    t_data data = {0};
     data.hops_max = 30;
+    data.start_port = 33434;
 
-    if (parse_arg(ac, av, &data))
-        return (2);
-
-    if (resolve_dest(&data) != 0)
-        return (1);
+    if (parse_arg(ac, av, &data)) return (2);
+    if (init_env(&data)) return (1);
     
-    if (init_sockets(&data) != 0)
-        return (1);
-
     traceroute_loop(&data);
 
     close(data.send_sock);
