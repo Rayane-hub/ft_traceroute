@@ -5,12 +5,12 @@ NAME	= ft_traceroute
 .DEFAULT_GOAL := all
 
 # Fichier(s) .c présents dans le projet
-SRCS	= src/main.c
+SRCS	= src/main.c src/parsing.c src/network.c
 
 # Programme utilisé pour compiler (gcc)
 CC		= gcc
 
-INC_DIR	= src
+INC_DIR	= .
 
 # Options passées à gcc lors de chaque compilation
 CFLAGS 	= -Wall -Wextra -Werror -I$(INC_DIR) -MMD -MP
