@@ -1,6 +1,5 @@
 #include "ft_traceroute.h"
 
-
 int main(int ac, char **av) {
     t_data data = {0};
     data.hops_max = 30;

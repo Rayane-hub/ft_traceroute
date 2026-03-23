@@ -11,6 +11,14 @@ int parse_arg(int ac, char **av, t_data *data) {
     for (int i = 1; i < ac; i++) 
     {
         if (strcmp(av[i], "--help") == 0) { print_help(); exit(0); }
+        if (strcmp(av[i], "-m") == 0) { 
+            if(av[i+1]){
+                int res = atoi(av[i+1]);
+                if(res <= 0)
+                    printf("first hop out of range\n");
+                printf("|%s|   res = |%d|\n", av[i+1], res);
+            }
+        }
         if (av[i][0] == '-') return (fprintf(stderr, "Bad option `%s'\n", av[i]), 1);
         if (!data->host) data->host = av[i];
         else
