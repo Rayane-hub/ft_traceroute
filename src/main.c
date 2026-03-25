@@ -5,7 +5,7 @@ int main(int ac, char **av) {
     data.hops_max = 30;
     data.start_port = 33434;
 
-    if (parse_arg(ac, av, &data)) 
+    if (!parse_arg(ac, av, &data)) 
         return (2);
     if (init_env(&data)) 
         return (1);

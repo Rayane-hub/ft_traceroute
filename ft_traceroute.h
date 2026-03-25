@@ -12,6 +12,8 @@
 #include <sys/time.h>
 #include <string.h>
 #include <stdlib.h>
+#include <stdbool.h>
+
 
 #define USEC_PER_SEC 1000000
 
@@ -26,6 +28,6 @@ typedef struct s_data {
     char                ip_str[INET_ADDRSTRLEN];
 }   t_data;
 
-int     parse_arg(int ac, char **av, t_data *data);
+bool     parse_arg(int ac, char **av, t_data *data);
 int     init_env(t_data *data);
 void    traceroute_loop(t_data *data);
