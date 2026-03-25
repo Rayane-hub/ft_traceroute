@@ -28,7 +28,7 @@ int	ft_atoi(const char *str, bool *out)
 		n = n + *str - '0';
 		str++;
 	}
-    if (*str != '\0'){
+    if (*str != '\0' || n * sign > INT_MAX || n * sign < INT_MIN){
         *out = true;
     }
 	return (n * sign);
