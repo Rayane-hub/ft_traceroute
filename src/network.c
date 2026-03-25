@@ -65,8 +65,7 @@ void traceroute_loop(t_data *data) {
 
         char last_ip[INET_ADDRSTRLEN] = "";
         int reached = 0;
-
-        for (int probe = 0; probe < 3; probe++) 
+        for (int probe = 0; probe < data->probe_max; probe++) 
         {
             struct timeval t1, t2;
             uint16_t curr_port = data->start_port + (data->ttl * 3) + probe;

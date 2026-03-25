@@ -23,6 +23,7 @@ typedef struct s_data {
     int                 recv_sock;
     int                 ttl;
     int                 hops_max;
+    int                 probe_max;
     uint16_t            start_port;
     struct sockaddr_in  dest;
     char                ip_str[INET_ADDRSTRLEN];

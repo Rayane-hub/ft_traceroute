@@ -3,6 +3,7 @@
 int main(int ac, char **av) {
     t_data data = {0};
     data.hops_max = 30;
+    data.probe_max = 3;
     data.start_port = 33434;
 
     if (!parse_arg(ac, av, &data)) 

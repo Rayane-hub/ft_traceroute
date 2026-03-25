@@ -34,6 +34,21 @@ int	ft_atoi(const char *str, bool *out)
 	return (n * sign);
 }
 
+bool flag_q(char **av, int i, t_data *data)
+{
+    bool out = false;
+    if(av[i])
+    {
+        int probe = ft_atoi(av[i], &out);
+    
+        if (out)                        return(fprintf(stderr, "Cannot handle `-q' option with arg `%s' (argc %d)\n", av[i], i), false);
+        if (probe <= 0 || probe > 10)   return (fprintf(stderr, "no more than 10 probes per hop\n"), false);
+        data->probe_max = probe;
+    }
+    else                                return (fprintf(stderr, "Option `-q' (argc %d) requires an argument: `-q nqueries'\n", i), false);
+    return (true);
+}
+
 bool flag_m(char **av, int i, t_data *data)
 {
     bool out = false;
@@ -59,6 +74,11 @@ bool parse_arg(int ac, char **av, t_data *data) {
         if (strcmp(av[i], "-m") == 0) 
         {
             if (!flag_m(av, ++i, data)) return(false);
+            continue;
+        }
+        if (strcmp(av[i], "-q") == 0) 
+        {
+            if (!flag_q(av, ++i, data)) return(false);
             continue;
         }
         if (av[i] && av[i][0] == '-')
