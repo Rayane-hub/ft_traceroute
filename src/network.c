@@ -23,7 +23,7 @@ int init_env(t_data *data) {
 /* --- P0 : FILTRAGE DES PAQUETS (PACKET MATCHING) --- 
 ** On vérifie que le paquet ICMP contient bien NOTRE paquet UDP original.
 */
-int is_my_packet(unsigned char *buf, ssize_t len, uint16_t expected_port) {
+static int is_my_packet(unsigned char *buf, ssize_t len, uint16_t expected_port) {
     struct iphdr *ip = (struct iphdr *)buf;
 
     if (len < (ssize_t)sizeof(struct iphdr)) 
@@ -55,63 +55,111 @@ int is_my_packet(unsigned char *buf, ssize_t len, uint16_t expected_port) {
     return (0);
 }
 
+static void print_hop_host(t_data *data, struct sockaddr_in *from, char *last_ip)
+{
+    char                curr_ip[INET_ADDRSTRLEN];
+    char                hostname[NI_MAXHOST];
+    struct sockaddr_in  sa = {0};
+
+    inet_ntop(AF_INET, &from->sin_addr, curr_ip, sizeof(curr_ip));
+    if (strcmp(last_ip, curr_ip) == 0)
+        return ;
+    if (data->flag_n)
+        printf(" %s", curr_ip);
+    else
+    {
+        sa.sin_family = AF_INET;
+        sa.sin_addr = from->sin_addr;
+        if (getnameinfo((struct sockaddr *)&sa, sizeof(sa), hostname, sizeof(hostname), NULL, 0, 0) == 0)
+            printf(" %s (%s)", hostname, curr_ip);
+        else
+            printf(" %s", curr_ip);
+    }
+    strcpy(last_ip, curr_ip);
+}
+
+static int wait_for_probe_reply(t_data *data, struct timeval *t1, uint16_t curr_port, char *last_ip)
+{
+    struct timeval      now;
+    struct timeval      t2;
+    struct timeval      tv;
+    struct sockaddr_in  from;
+    unsigned char       buf[1500];
+    socklen_t           len;
+    long                elapsed_us;
+    long                timeout_us;
+    ssize_t             res;
+    int                 status;
+
+    len = sizeof(from);
+    while (1)
+    {
+        gettimeofday(&now, NULL);
+        elapsed_us = (now.tv_sec - t1->tv_sec) * USEC_PER_SEC
+            + (now.tv_usec - t1->tv_usec);
+        timeout_us = USEC_PER_SEC - elapsed_us;
+        if (timeout_us <= 0)
+            return (printf(" *"), 0);
+        tv = (struct timeval){timeout_us / USEC_PER_SEC,
+            timeout_us % USEC_PER_SEC};
+        setsockopt(data->recv_sock, SOL_SOCKET, SO_RCVTIMEO, &tv, sizeof(tv));
+        res = recvfrom(data->recv_sock, buf, sizeof(buf), 0,
+                (struct sockaddr *)&from, &len);
+        if (res < 0)
+            return (printf(" *"), 0);
+        status = is_my_packet(buf, res, curr_port);
+        if (status > 0)
+        {
+            gettimeofday(&t2, NULL);
+            print_hop_host(data, &from, last_ip);
+            printf("  %.3f ms", (t2.tv_sec - t1->tv_sec) * 1000.0 + (t2.tv_usec - t1->tv_usec) / 1000.0);
+            return (status == 2);
+        }
+    }
+}
+
+static int send_probe(t_data *data, int probe, char *last_ip)
+{
+    struct timeval  t1;
+    uint16_t        curr_port;
+    char            payload[32];
+
+    curr_port = data->start_port + (data->ttl * 3) + probe;
+    data->dest.sin_port = htons(curr_port);
+    memset(payload, 0, sizeof(payload));
+    gettimeofday(&t1, NULL);
+    sendto(data->send_sock, payload, sizeof(payload), 0,(struct sockaddr *)&data->dest, sizeof(data->dest));
+    return (wait_for_probe_reply(data, &t1, curr_port, last_ip));
+}
+
+static int process_ttl(t_data *data)
+{
+    char    last_ip[INET_ADDRSTRLEN];
+    int     reached;
+    int     probe;
+
+    memset(last_ip, 0, sizeof(last_ip));
+    reached = 0;
+    printf("%2d ", data->ttl);
+    setsockopt(data->send_sock, IPPROTO_IP, IP_TTL, &data->ttl,
+        sizeof(data->ttl));
+    probe = 0;
+    while (probe < data->probe_max)
+    {
+        if (send_probe(data, probe, last_ip))
+            reached = 1;
+        probe++;
+    }
+    printf("\n");
+    return (reached);
+}
+
 /* --- BOUCLE PRINCIPALE --- */
 void traceroute_loop(t_data *data) {
     printf("ft_traceroute to %s (%s), %d hops max, 60 byte packets\n", data->host, data->ip_str, data->hops_max);
 
     for (data->ttl = 1; data->ttl <= data->hops_max; data->ttl++) {
-        printf("%2d ", data->ttl);
-        setsockopt(data->send_sock, IPPROTO_IP, IP_TTL, &data->ttl, sizeof(data->ttl));
-
-        char last_ip[INET_ADDRSTRLEN] = "";
-        int reached = 0;
-        for (int probe = 0; probe < data->probe_max; probe++) 
-        {
-            struct timeval t1, t2;
-            uint16_t curr_port = data->start_port + (data->ttl * 3) + probe;
-            data->dest.sin_port = htons(curr_port);
-
-            // Payload de 32 octets pour arriver à 60 octets au total (IP+UDP+Data)
-            char payload[32] = {0};
-            gettimeofday(&t1, NULL);
-            sendto(data->send_sock, payload, sizeof(payload), 0, (struct sockaddr *)&data->dest, sizeof(data->dest));
-
-            unsigned char buf[1500];
-            struct sockaddr_in from;
-            socklen_t len = sizeof(from);
-
-            while (1) { // Boucle de lecture pour filtrer les paquets parasites
-                struct timeval now;
-                gettimeofday(&now, NULL);
-                long elapsed_us = (now.tv_sec - t1.tv_sec) * USEC_PER_SEC + (now.tv_usec - t1.tv_usec);
-                long timeout_us = USEC_PER_SEC - elapsed_us;
-
-                if (timeout_us <= 0) { printf("  *"); break; }
-
-                struct timeval tv = { timeout_us / USEC_PER_SEC, timeout_us % USEC_PER_SEC };
-                setsockopt(data->recv_sock, SOL_SOCKET, SO_RCVTIMEO, &tv, sizeof(tv));
-
-                ssize_t res = recvfrom(data->recv_sock, buf, sizeof(buf), 0, (struct sockaddr *)&from, &len);
-                if (res < 0) { printf("  *"); break; }
-
-                int status = is_my_packet(buf, res, curr_port);
-                if (status > 0) {
-                    gettimeofday(&t2, NULL);
-                    char curr_ip[INET_ADDRSTRLEN];
-                    inet_ntop(AF_INET, &from.sin_addr, curr_ip, sizeof(curr_ip));
-
-                    if (strcmp(last_ip, curr_ip) != 0) {
-                        printf(" (%s)", curr_ip); // P0 : Pas de getnameinfo ici !
-                        strcpy(last_ip, curr_ip);
-                    }
-                    printf("  %.3f ms", (t2.tv_sec - t1.tv_sec) * 1000.0 + (t2.tv_usec - t1.tv_usec) / 1000.0);
-                    if (status == 2)
-                        reached = 1;
-                    break;
-                }
-            }
-        }
-        printf("\n");
-        if (reached) break;
+        if (process_ttl(data))
+            break;
     }
 }

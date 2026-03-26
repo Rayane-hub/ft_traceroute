@@ -5,6 +5,7 @@ int main(int ac, char **av) {
     data.hops_max = 30;
     data.probe_max = 3;
     data.start_port = 33434;
+    data.flag_n = false;
 
     if (!parse_arg(ac, av, &data)) 
         return (2);

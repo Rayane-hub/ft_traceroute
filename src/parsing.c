@@ -64,6 +64,20 @@ bool flag_m(char **av, int i, t_data *data)
     return (true);
 }
 
+bool flag_p(char **av, int i, t_data *data)
+{
+    bool out = false;
+    if(av[i])
+    {
+        int port = ft_atoi(av[i], &out);
+        if (out)                            return(fprintf(stderr, "Cannot handle `-p' option with arg `%s' (argc %d)\n", av[i], i), false);
+        if (port < 1024 || port > 65000)    return(fprintf(stderr, "Invalid port: choose between 1024 and 65000\n"), false);
+        data->start_port = port;
+    }
+    else                                    return (fprintf(stderr, "Option `-m' requires an argument: `-m max_ttl'\n"), false);
+    return (true);
+}
+
 bool parse_arg(int ac, char **av, t_data *data) {
     if (ac <= 1) 
         return(printf("Usage: ft_traceroute [--help] <destination>\n"), false);
@@ -79,6 +93,16 @@ bool parse_arg(int ac, char **av, t_data *data) {
         if (strcmp(av[i], "-q") == 0) 
         {
             if (!flag_q(av, ++i, data)) return(false);
+            continue;
+        }
+        if (strcmp(av[i], "-p") == 0) 
+        {
+            if (!flag_p(av, ++i, data)) return(false);
+            continue;
+        }
+        if (strcmp(av[i], "-n") == 0) 
+        {
+            data->flag_n = true;
             continue;
         }
         if (av[i] && av[i][0] == '-')
