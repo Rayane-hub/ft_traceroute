@@ -1,5 +1,7 @@
 #include "ft_traceroute.h"
 
+// Main entry point of the program
+// Initializes data, parses arguments, sets up environment, runs traceroute loop, and cleans up sockets
 int main(int ac, char **av) {
     t_data data = {0};
     data.hops_max = 30;
@@ -11,7 +13,7 @@ int main(int ac, char **av) {
         return (2);
     if (init_env(&data)) 
         return (1);
-    
+
     traceroute_loop(&data);
 
     close(data.send_sock);

@@ -1,5 +1,11 @@
+
 #include "ft_traceroute.h"
-/* --- RÉSOLUTION ET SOCKETS --- */
+
+/**
+ * @brief Initializes the network environment: resolves the host, sets up sockets, and configures receive timeout.
+ * @param data Pointer to the traceroute data structure.
+ * @return 0 on success, 1 on error.
+ */
 int init_env(t_data *data) {
     struct addrinfo hints = {0}, *res;
     hints.ai_family = AF_INET;
@@ -7,7 +13,7 @@ int init_env(t_data *data) {
 
     if (getaddrinfo(data->host, NULL, &hints, &res) != 0)
         return (fprintf(stderr, "ft_traceroute: %s: Name or service not known\n", data->host), 1);
-    
+
     data->dest = *(struct sockaddr_in *)res->ai_addr;
     inet_ntop(AF_INET, &data->dest.sin_addr, data->ip_str, sizeof(data->ip_str));
     freeaddrinfo(res);
@@ -16,13 +22,17 @@ int init_env(t_data *data) {
     data->recv_sock = socket(AF_INET, SOCK_RAW, IPPROTO_ICMP);
     struct timeval tv = {1, 0};
     setsockopt(data->recv_sock, SOL_SOCKET, SO_RCVTIMEO, &tv, sizeof(tv));
-    
+
     return (data->send_sock < 0 || data->recv_sock < 0);
 }
 
-/* --- P0 : FILTRAGE DES PAQUETS (PACKET MATCHING) --- 
-** On vérifie que le paquet ICMP contient bien NOTRE paquet UDP original.
-*/
+/**
+ * @brief Checks if the received ICMP packet matches the sent UDP packet (by port).
+ * @param buf Buffer containing the received packet.
+ * @param len Length of the buffer.
+ * @param expected_port The destination port expected in the original UDP packet.
+ * @return 1 if match (Time Exceeded), 2 if match (Destination Unreachable), 0 otherwise.
+ */
 static int is_my_packet(unsigned char *buf, ssize_t len, uint16_t expected_port) {
     struct iphdr *ip = (struct iphdr *)buf;
 
@@ -33,10 +43,8 @@ static int is_my_packet(unsigned char *buf, ssize_t len, uint16_t expected_port)
 
     struct icmphdr *icmp = (struct icmphdr *)(buf + ip_hdr_len);
 
-    // Si c'est un Time Exceeded ou Destination Unreachable
     if (icmp->type == ICMP_TIME_EXCEEDED || icmp->type == ICMP_DEST_UNREACH) 
     {
-        // Le "payload" de l'ICMP contient l'en-tête IP + 8 octets du paquet original
         if (len < ip_hdr_len + 8 + (ssize_t)sizeof(struct iphdr) + 8) 
             return (0);
 
@@ -47,14 +55,19 @@ static int is_my_packet(unsigned char *buf, ssize_t len, uint16_t expected_port)
             return (0);
 
         struct udphdr *inner_udp = (struct udphdr *)((unsigned char *)inner_ip + inner_ip_len);
-        
-        // On vérifie si le port de destination correspond à celui envoyé
+
         if (ntohs(inner_udp->dest) == expected_port)
             return (icmp->type == ICMP_DEST_UNREACH ? 2 : 1);
     }
     return (0);
 }
 
+/**
+ * @brief Prints the host or IP address for each hop.
+ * @param data Pointer to the traceroute data structure.
+ * @param from Pointer to the sockaddr_in structure of the current hop.
+ * @param last_ip String containing the last printed IP address to avoid duplicates.
+ */
 static void print_hop_host(t_data *data, struct sockaddr_in *from, char *last_ip)
 {
     char                curr_ip[INET_ADDRSTRLEN];
@@ -78,6 +91,14 @@ static void print_hop_host(t_data *data, struct sockaddr_in *from, char *last_ip
     strcpy(last_ip, curr_ip);
 }
 
+/**
+ * @brief Waits for a reply to a probe and returns the status.
+ * @param data Pointer to the traceroute data structure.
+ * @param t1 Pointer to the timeval structure marking the start time.
+ * @param curr_port The current UDP port used for the probe.
+ * @param last_ip String containing the last printed IP address to avoid duplicates.
+ * @return Status code indicating the result of the probe.
+ */
 static int wait_for_probe_reply(t_data *data, struct timeval *t1, uint16_t curr_port, char *last_ip)
 {
     struct timeval      now;
@@ -118,6 +139,13 @@ static int wait_for_probe_reply(t_data *data, struct timeval *t1, uint16_t curr_
     }
 }
 
+/**
+ * @brief Sends a UDP probe for the current TTL and waits for an ICMP reply.
+ * @param data Pointer to the main data structure.
+ * @param probe Probe number (for the UDP port).
+ * @param last_ip String containing the last displayed IP (avoids duplicates).
+ * @return 1 if the destination is reached, 0 otherwise.
+ */
 static int send_probe(t_data *data, int probe, char *last_ip)
 {
     struct timeval  t1;
@@ -132,6 +160,11 @@ static int send_probe(t_data *data, int probe, char *last_ip)
     return (wait_for_probe_reply(data, &t1, curr_port, last_ip));
 }
 
+/**
+ * @brief Processes all probes for a given TTL, displays results, and indicates if the destination is reached.
+ * @param data Pointer to the main data structure.
+ * @return 1 if the destination is reached, 0 otherwise.
+ */
 static int process_ttl(t_data *data)
 {
     char    last_ip[INET_ADDRSTRLEN];
@@ -154,7 +187,10 @@ static int process_ttl(t_data *data)
     return (reached);
 }
 
-/* --- BOUCLE PRINCIPALE --- */
+/**
+ * @brief Main traceroute loop: increments TTL, launches probes, and displays results.
+ * @param data Pointer to the main data structure.
+ */
 void traceroute_loop(t_data *data) {
     printf("ft_traceroute to %s (%s), %d hops max, 60 byte packets\n", data->host, data->ip_str, data->hops_max);
 
