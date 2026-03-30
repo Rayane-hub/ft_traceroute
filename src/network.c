@@ -19,7 +19,12 @@ int init_env(t_data *data) {
     freeaddrinfo(res);
 
     data->send_sock = socket(AF_INET, SOCK_DGRAM, IPPROTO_UDP);
+    if (data->send_sock < 0)
+        return (fprintf(stderr, "ft_traceroute: socket: %s\n", strerror(errno)), 1);
+        
     data->recv_sock = socket(AF_INET, SOCK_RAW, IPPROTO_ICMP);
+    if (data->recv_sock < 0)
+        return (fprintf(stderr, "ft_traceroute: socket: %s\n", strerror(errno)), 1);
     struct timeval tv = {1, 0};
     setsockopt(data->recv_sock, SOL_SOCKET, SO_RCVTIMEO, &tv, sizeof(tv));
 
@@ -194,7 +199,7 @@ static int process_ttl(t_data *data)
 void traceroute_loop(t_data *data) {
     printf("ft_traceroute to %s (%s), %d hops max, 60 byte packets\n", data->host, data->ip_str, data->hops_max);
 
-    for (data->ttl = 1; data->ttl <= data->hops_max; data->ttl++) {
+    for (data->ttl = data->first_ttl ; data->ttl <= data->hops_max; data->ttl++) {
         if (process_ttl(data))
             break;
     }

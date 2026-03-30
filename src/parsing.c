@@ -58,7 +58,7 @@ bool flag_q(char **av, int i, t_data *data)
         if (probe <= 0 || probe > 10)   return (fprintf(stderr, "no more than 10 probes per hop\n"), false);
         data->probe_max = probe;
     }
-    else                                return (fprintf(stderr, "Option `-q' (argc %d) requires an argument: `-q nqueries'\n", i), false);
+    else                                return (fprintf(stderr, "Option `-q' (argc %d) requires an argument: `-q nqueries'\n", i-1), false);
     return (true);
 }
 
@@ -101,7 +101,28 @@ bool flag_p(char **av, int i, t_data *data)
         if (port < 1024 || port > 65000)    return(fprintf(stderr, "Invalid port: choose between 1024 and 65000\n"), false);
         data->start_port = port;
     }
-    else                                    return (fprintf(stderr, "Option `-m' requires an argument: `-m max_ttl'\n"), false);
+    else                                    return (fprintf(stderr, "Option `-p' (argc %d) requires an argument: `-p port'\n", i-1), false);
+    return (true);
+}
+
+/**
+ * @brief Handles the '-f' flag (first TTL/hop).
+ * @param av Argument array.
+ * @param i Index of the current argument.
+ * @param data Main structure to modify.
+ * @return true on success, false otherwise.
+ */
+bool flag_f(char **av, int i, t_data *data)
+{
+    bool out = false;
+    if(av[i])
+    {
+        int ttl = ft_atoi(av[i], &out);
+        if (out)                            return(fprintf(stderr, "Cannot handle `%s' option with arg `f' (argc %d)\n", av[i], i), false);
+        if (ttl < 1 || ttl > 30)    return(fprintf(stderr, "first hop out of range\n"), false);
+        data->first_ttl = ttl;
+    }
+    else                                    return (fprintf(stderr, "Option `-f' (argc %d) requires an argument: `-f first_ttl'\n", i-1), false);
     return (true);
 }
 
@@ -132,6 +153,11 @@ bool parse_arg(int ac, char **av, t_data *data) {
         if (strcmp(av[i], "-p") == 0) 
         {
             if (!flag_p(av, ++i, data)) return(false);
+            continue;
+        }
+        if (strcmp(av[i], "-f") == 0) 
+        {
+            if (!flag_f(av, ++i, data)) return(false);
             continue;
         }
         if (strcmp(av[i], "-n") == 0) 

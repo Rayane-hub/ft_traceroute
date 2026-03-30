@@ -8,9 +8,16 @@ int main(int ac, char **av) {
     data.probe_max = 3;
     data.start_port = 33434;
     data.flag_n = false;
+    data.first_ttl = 1;
 
     if (!parse_arg(ac, av, &data)) 
         return (2);
+
+    if (data.first_ttl > data.hops_max) {
+        fprintf(stderr, "first hop out of range\n");
+        return (2);
+    }
+
     if (init_env(&data)) 
         return (1);
 

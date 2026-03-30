@@ -23,6 +23,7 @@ typedef struct s_data {
     int                 send_sock;
     int                 recv_sock;
     int                 ttl;
+    int                 first_ttl;
     int                 hops_max;
     int                 probe_max;
     uint16_t            start_port;
