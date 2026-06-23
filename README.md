@@ -40,21 +40,12 @@ L'objectif est de comprendre le fonctionnement du routage IP, du TTL, des messag
 
 ```text
 ft_traceroute/
-├── include/
-│   ├── ft_traceroute.h
-│   ├── network.h
-│   └── utils.h
-│
 ├── src/
 │   ├── main.c
-│   ├── traceroute.c
-│   ├── packet.c
-│   ├── receive.c
-│   ├── dns.c
-│   ├── socket.c
-│   ├── statistics.c
-│   └── utils.c
+│   ├── network.c
+│   └── parsing.c
 │
+├── ft_traceroute.h
 ├── Makefile
 └── README.md
 ```
